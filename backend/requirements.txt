@@ -1,0 +1,8 @@
+echo "Django==4.2.0
+djangorestframework==3.14.0
+django-cors-headers==4.0.0
+opencv-python==4.8.0.76
+opencv-contrib-python==4.8.0.76
+pillow==10.0.0
+numpy==1.24.3
+django-filter==23.2" > requirements.txt

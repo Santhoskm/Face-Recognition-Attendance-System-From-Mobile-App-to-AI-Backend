@@ -242,4 +242,4 @@ Temporary Items
 # ========== DATABASES ==========
 *.db
 *.sqlite
-*.sqlite3
+*.sqlite3git add backend/manage.py
