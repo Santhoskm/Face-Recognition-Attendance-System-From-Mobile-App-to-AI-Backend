@@ -59,8 +59,19 @@ const FaceRegistrationScreen = ({ navigation, route }: any) => {
     };
 
     const removeImage = (index: number) => {
-        setCapturedImages(prev => prev.filter((_, i) => i !== index));
-        if (capturedImages.length <= 3) setCurrentStep(1);
+        setCapturedImages(prev => {
+            const updated = prev.filter((_, i) => i !== index);
+
+            if (updated.length <= 2) {
+                setCurrentStep(1);
+            } else if (updated.length <= 4) {
+                setCurrentStep(2);
+            } else {
+                setCurrentStep(3);
+            }
+
+            return updated;
+        });
     };
 
     const registerFaces = async () => {

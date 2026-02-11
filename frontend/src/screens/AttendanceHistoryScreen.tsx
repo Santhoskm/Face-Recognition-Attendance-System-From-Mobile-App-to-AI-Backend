@@ -1,4 +1,4 @@
-// src/screens/AttendanceHistoryScreen.tsx - UPDATED WITH REAL DATA
+// src/screens/AttendanceHistoryScreen.tsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import {
     View,
@@ -6,10 +6,8 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    Dimensions,
     RefreshControl,
     ActivityIndicator,
-    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,7 +15,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StackNavigationProp } from '@react-navigation/stack';
 import moment from 'moment';
 import { Ionicons } from '@expo/vector-icons';
-import { API_BASE_URL } from '../services/api';
 
 type RootStackParamList = {
     AttendanceHistory: undefined;
@@ -30,7 +27,8 @@ interface Props {
     navigation: AttendanceHistoryScreenNavigationProp;
 }
 
-const { width } = Dimensions.get('window');
+// Add this if not in a separate file
+const API_BASE_URL = 'http://192.168.29.157:8000';
 
 const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
     const [refreshing, setRefreshing] = useState(false);
@@ -43,52 +41,85 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
         verified: 0,
         successRate: '0',
     });
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        loadAttendanceData();
-        loadEmployeeData();
+        console.log('AttendanceHistoryScreen mounted');
+        loadInitialData();
     }, []);
 
-    const loadEmployeeData = async () => {
+    const loadInitialData = async () => {
+        setLoading(true);
+        setError(null);
+
         try {
+            console.log('Loading initial data...');
+
+            // First load employee data
             const employeeData = await AsyncStorage.getItem('employee_data');
+            console.log('Employee data from storage:', employeeData ? 'Found' : 'Not found');
+
             if (employeeData) {
-                setEmployee(JSON.parse(employeeData));
+                const parsedEmployee = JSON.parse(employeeData);
+                console.log('Parsed employee:', parsedEmployee.employee_id);
+                setEmployee(parsedEmployee);
+
+                // Then load attendance data
+                await loadAttendanceData(parsedEmployee);
+            } else {
+                setError('No employee data found. Please login again.');
+                setLoading(false);
             }
         } catch (error) {
-            console.error('Error loading employee data:', error);
+            console.error('Error loading initial data:', error);
+            setError('Failed to load data');
+            setLoading(false);
         }
     };
 
-    const loadAttendanceData = async () => {
-        if (!employee) return;
+    const loadAttendanceData = async (employeeObj: any) => {
+        if (!employeeObj || !employeeObj.employee_id) {
+            console.error('No employee ID available');
+            setError('No employee ID found');
+            setLoading(false);
+            return;
+        }
 
-        setLoading(true);
+        console.log('Loading attendance history for:', employeeObj.employee_id);
+
         try {
-            console.log('Loading attendance history for:', employee.employee_id);
-
             const response = await fetch(`${API_BASE_URL}/api/attendance-history/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    employee_id: employee.employee_id,
+                    employee_id: employeeObj.employee_id,
                 }),
             });
 
+            console.log('Response status:', response.status);
+
             const text = await response.text();
-            console.log('Attendance history response text:', text.substring(0, 200) + '...');
+            console.log('Response text length:', text.length);
 
             let data;
             try {
                 data = JSON.parse(text);
+                console.log('Parsed data keys:', Object.keys(data));
             } catch (e) {
+                console.error('JSON parse error:', e);
+                console.log('Raw response (first 500 chars):', text.substring(0, 500));
                 data = { error: 'Invalid JSON response' };
             }
 
             if (response.ok && data.success) {
                 const history = data.attendance_history || [];
+                console.log('Attendance records found:', history.length);
+
+                if (history.length === 0) {
+                    console.log('No attendance records found for employee');
+                }
 
                 // Group attendance by date
                 const groupedByDate = groupAttendanceByDate(history);
@@ -105,13 +136,18 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
                     successRate,
                 });
 
+                setError(null);
+
             } else {
-                Alert.alert('Error', data.error || 'Failed to load attendance history');
+                const errorMsg = data.error || 'Failed to load attendance history';
+                console.error('Server error:', errorMsg);
+                setError(errorMsg);
                 setAttendanceData([]);
             }
-        } catch (error) {
-            console.error('Error loading attendance:', error);
-            Alert.alert('Error', 'Failed to load attendance data');
+        } catch (error: any) {
+            console.error('Network error:', error);
+            setError('Network error. Check server connection.');
+            setAttendanceData([]);
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -122,25 +158,34 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
         const groups: any = {};
 
         records.forEach(record => {
-            if (!record.timestamp) return;
-
-            const date = moment(record.timestamp).format('YYYY-MM-DD');
-            const displayDate = getDisplayDate(record.timestamp);
-
-            if (!groups[date]) {
-                groups[date] = {
-                    id: date,
-                    date: displayDate,
-                    records: [],
-                };
+            if (!record.timestamp) {
+                console.log('Record missing timestamp:', record);
+                return;
             }
 
-            groups[date].records.push({
-                ...record,
-                id: record.id || Math.random().toString(),
-                time: moment(record.timestamp).format('h:mm A'),
-                confidence: record.confidence_score || 0.85,
-            });
+            try {
+                const date = moment(record.timestamp).format('YYYY-MM-DD');
+                const displayDate = getDisplayDate(record.timestamp);
+
+                if (!groups[date]) {
+                    groups[date] = {
+                        id: date,
+                        date: displayDate,
+                        records: [],
+                    };
+                }
+
+                groups[date].records.push({
+                    ...record,
+                    id: record.id || Math.random().toString(),
+                    time: moment(record.timestamp).format('h:mm A'),
+                    confidence: typeof record.confidence_score === 'number'
+                        ? record.confidence_score
+                        : 0.85,
+                });
+            } catch (e) {
+                console.error('Error processing record:', record, e);
+            }
         });
 
         // Sort by date (newest first)
@@ -149,21 +194,42 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
     };
 
     const getDisplayDate = (timestamp: string) => {
-        const date = moment(timestamp);
-        const today = moment().startOf('day');
+        try {
+            const date = moment(timestamp);
+            const today = moment().startOf('day');
 
-        if (date.isSame(today, 'day')) {
-            return 'Today';
-        } else if (date.isSame(today.subtract(1, 'day'), 'day')) {
-            return 'Yesterday';
-        } else {
-            return date.format('MMM D, YYYY');
+            if (date.isSame(today, 'day')) {
+                return 'Today';
+            } else if (date.isSame(today.clone().subtract(1, 'day'), 'day')) {
+                return 'Yesterday';
+            } else {
+                return date.format('MMM D, YYYY');
+            }
+        } catch (e) {
+            console.error('Error formatting date:', timestamp, e);
+            return 'Invalid Date';
         }
     };
 
     const onRefresh = async () => {
         setRefreshing(true);
-        await loadAttendanceData();
+        setError(null);
+
+        try {
+            const employeeData = await AsyncStorage.getItem('employee_data');
+            if (employeeData) {
+                const parsedEmployee = JSON.parse(employeeData);
+                setEmployee(parsedEmployee);
+                await loadAttendanceData(parsedEmployee);
+            } else {
+                setError('No employee data found');
+                setRefreshing(false);
+            }
+        } catch (error) {
+            console.error('Error refreshing:', error);
+            setError('Refresh failed');
+            setRefreshing(false);
+        }
     };
 
     const getFilteredData = () => {
@@ -230,9 +296,9 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
                     </View>
                 </View>
                 <Text style={styles.attendanceTime}>{item.time}</Text>
-                {item.confidence_score && (
+                {typeof item.confidence === 'number' && (
                     <Text style={styles.confidenceText}>
-                        Confidence: {(item.confidence_score * 100).toFixed(1)}%
+                        Confidence: {(item.confidence * 100).toFixed(1)}%
                     </Text>
                 )}
             </View>
@@ -263,6 +329,7 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
 
     const filteredData = getFilteredData();
 
+    // Show loading screen
     if (loading) {
         return (
             <SafeAreaView style={styles.container}>
@@ -284,6 +351,48 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#007AFF" />
                     <Text style={styles.loadingText}>Loading attendance history...</Text>
+                    {employee && (
+                        <Text style={styles.loadingSubtext}>
+                            Loading data for: {employee.employee_id}
+                        </Text>
+                    )}
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    // Show error screen
+    if (error) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <LinearGradient
+                    colors={['#007AFF', '#5856D6']}
+                    style={styles.headerGradient}
+                >
+                    <View style={styles.header}>
+                        <TouchableOpacity
+                            style={styles.backButton}
+                            onPress={() => navigation.goBack()}
+                        >
+                            <Ionicons name="arrow-back" size={24} color="#fff" />
+                        </TouchableOpacity>
+                        <Text style={styles.title}>Attendance History</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+                </LinearGradient>
+                <View style={styles.errorContainer}>
+                    <Ionicons name="alert-circle-outline" size={60} color="#FF3B30" />
+                    <Text style={styles.errorTitle}>Error Loading Data</Text>
+                    <Text style={styles.errorText}>{error}</Text>
+                    <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+                        <Text style={styles.retryButtonText}>Retry</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.secondaryButton}
+                        onPress={() => navigation.goBack()}
+                    >
+                        <Text style={styles.secondaryButtonText}>Go Back</Text>
+                    </TouchableOpacity>
                 </View>
             </SafeAreaView>
         );
@@ -381,7 +490,10 @@ const AttendanceHistoryScreen: React.FC<Props> = ({ navigation }) => {
                                     ? 'No verified records found'
                                     : selectedFilter === 'failed'
                                         ? 'No failed records found'
-                                        : 'No records available'}
+                                        : 'No attendance records available yet'}
+                            </Text>
+                            <Text style={styles.employeeInfo}>
+                                Employee ID: {employee?.employee_id || 'Unknown'}
                             </Text>
                         </View>
                     ) : (
@@ -426,11 +538,62 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: '#F2F2F7',
+        padding: 20,
     },
     loadingText: {
         marginTop: 16,
         fontSize: 16,
         color: '#8E8E93',
+    },
+    loadingSubtext: {
+        marginTop: 8,
+        fontSize: 14,
+        color: '#C7C7CC',
+    },
+    errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#F2F2F7',
+        padding: 20,
+    },
+    errorTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#FF3B30',
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    errorText: {
+        fontSize: 16,
+        color: '#666',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    retryButton: {
+        backgroundColor: '#007AFF',
+        paddingHorizontal: 30,
+        paddingVertical: 12,
+        borderRadius: 8,
+        marginTop: 10,
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    secondaryButton: {
+        paddingHorizontal: 30,
+        paddingVertical: 12,
+        borderRadius: 8,
+        marginTop: 10,
+        borderWidth: 1,
+        borderColor: '#007AFF',
+    },
+    secondaryButtonText: {
+        color: '#007AFF',
+        fontSize: 16,
+        fontWeight: '600',
     },
     headerGradient: {
         paddingTop: 10,
@@ -644,6 +807,11 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#999',
         textAlign: 'center',
+    },
+    employeeInfo: {
+        fontSize: 12,
+        color: '#C7C7CC',
+        marginTop: 8,
     },
     actionsCard: {
         backgroundColor: '#fff',

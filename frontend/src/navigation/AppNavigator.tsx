@@ -12,7 +12,6 @@ import FaceRegistrationScreen from '../screens/FaceRegistrationScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import AttendanceHistoryScreen from '../screens/AttendanceHistoryScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import FaceCamera from '../components/FaceCamera';
 import FaceCameraScreen from '../screens/FaceCameraScreen';
 
 // Define navigation types
