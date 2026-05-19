@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE_URL } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -35,7 +36,7 @@ interface Props {
     navigation: LoginScreenNavigationProp;
 }
 
-const API_BASE_URL = 'http://192.168.29.157:8000';
+// const API_BASE_URL = 'http://192.168.1.7:8000';
 
 const LoginScreen: React.FC<Props> = ({ navigation }) => {
     const [username, setUsername] = useState('demo');
